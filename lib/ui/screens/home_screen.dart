@@ -29,7 +29,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             Card(
               elevation: 0,
-              color: cs.primary.withOpacity(0.08),
+              color: cs.primary.withValues(alpha: 0.08),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
