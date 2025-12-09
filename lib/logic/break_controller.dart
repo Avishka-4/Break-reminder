@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../iot/ble_service.dart';
+import 'storage_service.dart';
 
 class BreakController extends ChangeNotifier {
   Duration workInterval = const Duration(minutes: 50);
@@ -13,6 +14,8 @@ class BreakController extends ChangeNotifier {
   DateTime? _nextEvent; // next break or work resume
   Timer? _timer;
   final BleService _ble = BleService();
+  final StorageService _store = StorageService();
+  DateTime? _periodStart;
 
   BreakController() {
     _loadPrefs();
@@ -37,7 +40,8 @@ class BreakController extends ChangeNotifier {
     if (isRunning) return;
     isRunning = true;
     isOnBreak = false;
-    _nextEvent = DateTime.now().add(workInterval);
+    _periodStart = DateTime.now();
+    _nextEvent = _periodStart!.add(workInterval);
     _startTicker();
     _ble.tryReconnectSaved();
     _ble.sendCommand({"type": "timer/start", "workMin": workInterval.inMinutes, "breakMin": breakInterval.inMinutes});
@@ -61,9 +65,15 @@ class BreakController extends ChangeNotifier {
 
   void stop() {
     _timer?.cancel();
+    // Record the current partial period if any
+    if (_periodStart != null) {
+      final now = DateTime.now();
+      _store.addSession(Session(start: _periodStart!, end: now, type: isOnBreak ? 'break' : 'focus'));
+    }
     isRunning = false;
     isOnBreak = false;
     _nextEvent = null;
+    _periodStart = null;
     _ble.sendCommand({"type": "timer/stop"});
     notifyListeners();
   }
@@ -73,8 +83,15 @@ class BreakController extends ChangeNotifier {
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_nextEvent == null) return;
       if (DateTime.now().isAfter(_nextEvent!)) {
+        final now = DateTime.now();
+        // Close the previous period and persist
+        if (_periodStart != null) {
+          _store.addSession(Session(start: _periodStart!, end: now, type: isOnBreak ? 'break' : 'focus'));
+        }
+        // Toggle period
         isOnBreak = !isOnBreak;
-        _nextEvent = DateTime.now().add(isOnBreak ? breakInterval : workInterval);
+        _periodStart = now;
+        _nextEvent = now.add(isOnBreak ? breakInterval : workInterval);
         _ble.sendCommand({"type": isOnBreak ? "break/start" : "break/end"});
         notifyListeners();
       } else {
